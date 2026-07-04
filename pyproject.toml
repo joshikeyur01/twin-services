@@ -1,0 +1,84 @@
+# Workspace root. Holds shared tool config and dev tooling only — every
+# runtime dependency belongs to the member that needs it (see docs/adr/).
+[project]
+name = "twin-services"
+version = "0.1.0"
+description = "Service-oriented digital twin: the UR5 twin decomposed into four contracted microservices."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Keyur Joshi", email = "keyurjoshi2104@gmail.com" }]
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0",
+    "grpcio-tools>=1.66",   # stub generation only; generated code is checked in
+    "mypy-protobuf>=3.6",   # protoc plugin behind `just gen`'s --mypy_out
+    "types-grpcio>=1.0",    # typing for the grpc runtime module
+    "httpx2",               # FastAPI/starlette TestClient transport
+]
+
+[tool.uv]
+package = false   # the root is a virtual project; members carry the code
+
+[tool.uv.workspace]
+members = [
+    "contracts",
+    "bridge",
+    "services/telemetry-svc",
+    "services/state-svc",
+    "services/command-svc",
+    "services/viz-svc",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["contracts/src/contracts/gen"]   # generated protobuf stubs, never linted
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF", "TID", "PL"]
+ignore = ["PLR0913"]
+
+[tool.ruff.lint.per-file-ignores]
+# Lazy ROS imports are deliberate: lint and tests must pass without a ROS 2 env.
+"bridge/src/bridge/main.py" = ["PLC0415"]
+"sim/scripts/*.py" = ["PLC0415", "N806"]
+# Asserting against literal status codes and values is what tests are for.
+"**/tests/*.py" = ["PLR2004"]
+
+[tool.ruff.lint.isort]
+# The src layouts hide these from ruff's first-party detection.
+known-first-party = ["contracts", "telemetry_svc", "state_svc", "command_svc", "viz_svc", "bridge"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "contracts.gen.*"
+ignore_errors = true   # grpcio-generated stubs are not our code to fix
+
+[[tool.mypy.overrides]]
+module = "telemetry_svc.ingest"
+disallow_untyped_calls = false   # influxdb-client's Point builder API is untyped
+
+[[tool.mypy.overrides]]
+module = ["rclpy", "rclpy.*", "sensor_msgs.*", "trajectory_msgs.*"]
+ignore_missing_imports = true   # ROS 2 packages come from the sourced ROS env, not pip
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "-ra --strict-markers --cov --cov-report=term-missing"
+markers = [
+    "slow: integration tests that touch a broker or database",
+    "chaos: tests that kill containers; require the compose stack running",
+]
